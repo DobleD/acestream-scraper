@@ -1,0 +1,60 @@
+{
+ "15CEFKBRHFfAP9rmL6hhLmHoXrrgmw4B5o": {
+  "added": 1742462136,
+  "ajax_key": "c444c4e3325bfc9673919d3783ca19ee1e4b9b3172cbeeab4b73039bb6728f61",
+  "bytes_recv": 161338,
+  "cache": {
+   "bad_files": {},
+   "hashfield": ""
+  },
+  "downloaded": 1742462155,
+  "modified": 1729230184,
+  "optional_downloaded": 0,
+  "own": false,
+  "peers": 25,
+  "permissions": [],
+  "serving": true,
+  "size": 1371178,
+  "size_files_optional": 0,
+  "size_optional": 32871,
+  "wrapper_key": "030ff6da6b4039f0ffb4c177c9085c334ebc2b98f12bb7b1acecf3ec7f21b7b0"
+ },
+ "191CazMVNaAcT9Y1zhkxd9ixMBPs59g2um": {
+  "added": 1742462136,
+  "ajax_key": "a6a30c90b8d0919812fa15a900c4f3cb4e8c57770cebcf2782d897f40827a69a",
+  "cache": {
+   "bad_files": {},
+   "hashfield": ""
+  },
+  "downloaded": null,
+  "modified": 1656369111,
+  "optional_downloaded": 0,
+  "own": false,
+  "peers": 31,
+  "permissions": [],
+  "serving": true,
+  "size": 922079,
+  "size_files_optional": 0,
+  "size_optional": 0,
+  "wrapper_key": "3505ca6109f5bd29c2763100fe711b70c27ac539c6c2c462923aaf052cb57795"
+ },
+ "1GnACKctkJrGWHTqxk9T9zXo2bLQc2PDnF": {
+  "added": 1742462136,
+  "ajax_key": "465273513d7b93bd63a0a43f25bc7c51955ea6b178b77275371fd5f5f4b956a6",
+  "cache": {
+   "bad_files": {},
+   "hashfield": ""
+  },
+  "downloaded": null,
+  "modified": 1668963290,
+  "optional_downloaded": 0,
+  "own": false,
+  "peers": 34,
+  "permissions": [],
+  "serving": true,
+  "size": 583843,
+  "size_files_optional": 0,
+  "size_optional": 0,
+  "wrapper_key": "ef1e615756d69e6ef3cf4fb25a29854c7909b9854138d03a7746deadc1ef70f1"
+ }
+}
