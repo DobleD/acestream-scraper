@@ -82,54 +82,11 @@ class EPGService:
             logger.error(f"Error parsing EPG XML: {str(e)}")
             raise
     
-    def get_channel_epg_data(self, channel: AcestreamChannel) -> Dict:
-        """
-        Get EPG data for a specific channel with the following priority:
-        1. Direct manual mapping in the channel table
-        2. String pattern mapping in EPGStringMapping
-        3. Automatic mapping by name similarity
-        """
-        # Ensure we have EPG data
-        if not self.epg_data:
-            self.fetch_epg_data()
-        
-        # 1. Check if it already has manual mapping in the table
-        if channel.tvg_id and channel.tvg_id in self.epg_data:
-            return self.epg_data[channel.tvg_id]
-        
-        # 2. Look for string pattern matches
-        string_mappings = self.epg_string_mapping_repo.get_all()
-        for mapping in string_mappings:
-            if mapping.search_pattern.lower() in channel.name.lower() and mapping.epg_channel_id in self.epg_data:
-                # Found a pattern match
-                return self.epg_data[mapping.epg_channel_id]
-        
-        # 3. Try automatic mapping by similarity
-        best_match = None
-        best_score = 0
-        
-        for epg_id, epg_data in self.epg_data.items():
-            score = SequenceMatcher(None, channel.name.lower(), epg_data["tvg_name"].lower()).ratio()
-            if score > best_score and score >= self.auto_mapping_threshold:
-                best_score = score
-                best_match = epg_id
-        
-        if best_match:
-            logger.info(f"Auto-mapped '{channel.name}' to '{self.epg_data[best_match]['tvg_name']}' (score: {best_score:.2f})")
-            return self.epg_data[best_match]
-        
-        # If no match, return basic information
-        return {
-            "tvg_id": "",
-            "tvg_name": channel.name,
-            "logo": ""
-        }
-    
     def _update_channel_epg(self, channel: AcestreamChannel) -> Tuple[bool, bool, bool, bool]:
         """
         Update EPG data for a channel.
         
-        Returns a tuple of (tvg_id_updated, tvg_name_updated, logo_updated, any_update)
+        Returns a tuple of (any_update, tvg_id_updated, tvg_name_updated, logo_updated)
         """
         string_mappings = self.epg_string_mapping_repo.get_all()
         
@@ -158,7 +115,7 @@ class EPGService:
                     
                     if changes_made:
                         logger.info(f"Cleared EPG data from channel '{channel.name}' due to exclusion pattern")
-                        return (True, True, True, True)
+                        return (True, False, False, False)
                     
                     return (False, False, False, False)
         
@@ -208,7 +165,7 @@ class EPGService:
                         pattern_score += 1500
                     
                     # Bonus if first word of pattern matches first word of channel
-                    # This helps prioritize patterns like "dazn laliga" for channels starting with "DAZN"
+                    # This helps prioritize patterns where first word matches
                     if channel_words and pattern_words and channel_words[0] == pattern_words[0]:
                         pattern_score += 1800
                     
@@ -223,10 +180,24 @@ class EPGService:
             
             if best_mapping.epg_channel_id in self.epg_data:
                 epg_data = self.epg_data[best_mapping.epg_channel_id]
-                updates = self._apply_epg_data(channel, epg_data)
-                if any(updates):
+                
+                # NEW VERIFICATION: Check if data is identical to avoid unnecessary updates
+                if (channel.tvg_id == epg_data.get("tvg_id") and
+                    channel.tvg_name == epg_data.get("tvg_name") and
+                    channel.logo == epg_data.get("logo")):
+                    # Data is already correct, no need to update
+                    logger.info(f"Channel '{channel.name}' already has correct EPG data, skipping")
+                    return (False, False, False, False)
+                
+                # Update data and determine what changed
+                tvg_id_updated, tvg_name_updated, logo_updated = self._apply_epg_data(channel, epg_data)
+                any_update = tvg_id_updated or tvg_name_updated or logo_updated
+
+                if any_update:
                     logger.info(f"Channel '{channel.name}' matched pattern '{best_mapping.search_pattern}', applied EPG data from channel '{best_mapping.epg_channel_id}'")
-                return updates
+                
+                # CORRECT ORDER: any_update first
+                return (any_update, tvg_id_updated, tvg_name_updated, logo_updated)
             else:
                 logger.warning(f"EPG channel ID '{best_mapping.epg_channel_id}' not found for pattern '{best_mapping.search_pattern}'")
         
@@ -235,30 +206,28 @@ class EPGService:
     
     def _apply_epg_data(self, channel: AcestreamChannel, epg_data: Dict) -> Tuple[bool, bool, bool]:
         """
-        Apply EPG data to the channel, always updating if the data exists in the EPG.
-        This overrides the previous behavior of only updating if the channel data was empty.
+        Apply EPG data to the channel, comparing if values actually change.
         Returns a tuple of (tvg_id_updated, tvg_name_updated, logo_updated).
         """
         tvg_id_updated = False
         tvg_name_updated = False
         logo_updated = False
         
-        # Update tvg_id if provided in EPG data (always update, not just when empty)
-        if epg_data["tvg_id"]:
-            # Only mark as updated if value actually changes
-            tvg_id_updated = channel.tvg_id != epg_data["tvg_id"]
+        # Update tvg_id if provided in EPG data AND it's different from current value
+        if epg_data.get("tvg_id") and channel.tvg_id != epg_data["tvg_id"]:
+            tvg_id_updated = True
             channel.tvg_id = epg_data["tvg_id"]
         
-        # Update tvg_name if provided in EPG data
-        if epg_data["tvg_name"]:
-            tvg_name_updated = channel.tvg_name != epg_data["tvg_name"]
+        # Update tvg_name if provided in EPG data AND it's different from current value
+        if epg_data.get("tvg_name") and channel.tvg_name != epg_data["tvg_name"]:
+            tvg_name_updated = True
             channel.tvg_name = epg_data["tvg_name"]
         
-        # Update logo if provided in EPG data
-        if epg_data["logo"]:
-            logo_updated = channel.logo != epg_data["logo"]
+        # Update logo if provided in EPG data AND it's different from current value
+        if epg_data.get("logo") and channel.logo != epg_data["logo"]:
+            logo_updated = True
             channel.logo = epg_data["logo"]
-            
+        
         return (tvg_id_updated, tvg_name_updated, logo_updated)
     
     def update_all_channels_epg(self, respect_existing: bool = False, clean_unmatched: bool = False) -> dict:
@@ -314,10 +283,11 @@ class EPGService:
                     # If respect_existing option is active and channel already has data, skip it
                     if respect_existing and (channel.tvg_id or channel.tvg_name or channel.logo):
                         stats["skipped"] += 1
+                        logger.info(f"SKIPPED: Channel '{channel.name}' - respect_existing=True and has EPG data")
                         continue
                     
                     if not has_mapping_rules:
-                        # If there are no mapping rules and the channel has data, clean it ONLY if clean_unmatched is true
+                        # If no mapping rules exist, consider channels as skipped unless we're cleaning them
                         if clean_unmatched and (channel.tvg_id or channel.tvg_name or channel.logo):
                             old_data = f"tvg_id={channel.tvg_id}, tvg_name={channel.tvg_name}, logo={'Yes' if channel.logo else 'No'}"
                             
@@ -336,12 +306,16 @@ class EPGService:
                             except Exception as e:
                                 logger.error(f"Failed to update channel {channel.name}: {str(e)}")
                                 stats["errors"] += 1
+                        else:
+                            # If no rules and we're not cleaning, skip the channel
+                            stats["skipped"] += 1
+                            logger.info(f"SKIPPED: Channel '{channel.name}' - no mapping rules available")
                         continue
                     
                     # If there are rules, proceed with applying mappings
-                    was_updated, tvg_id_updated, tvg_name_updated, logo_updated = self._update_channel_epg(channel)
+                    any_update, tvg_id_updated, tvg_name_updated, logo_updated = self._update_channel_epg(channel)
                     
-                    if was_updated:
+                    if any_update:
                         try:
                             self.channel_repo.update(channel)
                             session.flush()  # Ensure changes are applied
@@ -358,38 +332,46 @@ class EPGService:
                             stats["errors"] += 1
                         continue
                     
-                    # If channel was not updated and not excluded, clean its data
+                    # If not updated but not because of an error, mark as skipped
+                    stats["skipped"] += 1
+                    logger.info(f"SKIPPED: Channel '{channel.name}' - already has correct data or no matching rule found")
+
+                    # Check if channel is excluded - IMPORTANT: excluded channels should never be modified
                     is_excluded = self._is_excluded_by_rule(channel)
-                    
-                    if not is_excluded and (channel.tvg_id or channel.tvg_name or channel.logo):
-                        # Clean only if clean_unmatched is true
-                        if clean_unmatched:
-                            old_data = f"tvg_id={channel.tvg_id}, tvg_name={channel.tvg_name}, logo={'Yes' if channel.logo else 'No'}"
+                    if is_excluded:
+                        logger.info(f"SKIPPED: Channel '{channel.name}' - excluded by pattern rule")
+                        continue
+
+                    # Check if there's a mapping rule for this channel
+                    has_matching_rule = self._has_matching_mapping_rule(channel)
+
+                    # If clean_unmatched=True, clean ONLY channels that DON'T have a mapping rule
+                    if not has_matching_rule and clean_unmatched and (channel.tvg_id or channel.tvg_name or channel.logo):
+                        old_data = f"tvg_id={channel.tvg_id}, tvg_name={channel.tvg_name}, logo={'Yes' if channel.logo else 'No'}"
+                        
+                        # Clean data
+                        channel.tvg_id = None
+                        channel.tvg_name = None
+                        channel.logo = None
+                        
+                        try:
+                            self.channel_repo.update(channel)
+                            session.flush()
                             
-                            # Clean data
-                            channel.tvg_id = None
-                            channel.tvg_name = None
-                            channel.logo = None
-                            
-                            try:
-                                self.channel_repo.update(channel)
-                                session.flush()
-                                
-                                stats["cleaned"] += 1
-                                logger.info(f"CLEANED: Channel '{channel.name}' (previous: {old_data}) - no matching rule")
-                            except Exception as e:
-                                logger.error(f"Failed to clean channel {channel.name}: {str(e)}")
-                                stats["errors"] += 1
-                    elif is_excluded:
-                        stats["excluded"] += 1
-                    
+                            stats["cleaned"] += 1
+                            # No need to subtract from skipped, we're making decision upfront
+                            logger.info(f"CLEANED: Channel '{channel.name}' (previous: {old_data}) - no matching rule")
+                        except Exception as e:
+                            logger.error(f"Failed to clean channel {channel.name}: {str(e)}")
+                            stats["errors"] += 1
+                        
                 except Exception as e:
                     logger.error(f"Error processing channel {channel.name}: {str(e)}")
                     stats["errors"] += 1
             
             # Confirm all changes
             session.commit()
-            logger.info(f"EPG update completed. Summary: Updated={stats['updated']}, Cleaned={stats['cleaned']}, Locked={stats['locked']}, Excluded={stats['excluded']}, Errors={stats['errors']}")
+            logger.info(f"EPG update completed. Summary: Updated={stats['updated']}, Cleaned={stats['cleaned']}, Skipped={stats['skipped']}, Locked={stats['locked']}, Excluded={stats['excluded']}, Errors={stats['errors']}")
         
         except Exception as e:
             session.rollback()
@@ -408,6 +390,20 @@ class EPGService:
             if mapping.search_pattern.startswith('!'):
                 exclusion_pattern = mapping.search_pattern[1:].lower()
                 if exclusion_pattern in channel_name_lower:
+                    return True
+        
+        return False
+
+    def _has_matching_mapping_rule(self, channel: AcestreamChannel) -> bool:
+        """Determines if a channel has a matching mapping rule (not an exclusion rule)."""
+        string_mappings = self.epg_string_mapping_repo.get_all()
+        channel_name_lower = channel.name.lower()
+        
+        for mapping in string_mappings:
+            # Only consider normal rules, not exclusion rules
+            if not mapping.search_pattern.startswith('!'):
+                pattern_lower = mapping.search_pattern.lower()
+                if pattern_lower in channel_name_lower:
                     return True
         
         return False

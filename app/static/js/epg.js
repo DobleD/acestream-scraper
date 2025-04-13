@@ -481,12 +481,14 @@ async function updateChannelsEpg() {
         // Use the new stats format
         const stats = result.stats;
         
-        // Display message with the new format
+        // Disalay message with stats for the moment
         showAlert('success', `EPG update completed. 
             Updated: ${stats.updated || 0}, 
             Cleaned: ${stats.cleaned || 0}, 
+            Skipped: ${stats.skipped || 0},
             Locked: ${stats.locked || 0}, 
-            Excluded: ${stats.excluded || 0}`);
+            Excluded: ${stats.excluded || 0},
+            Errors: ${stats.errors || 0}`);
         
         // Update UI if needed
         if (typeof refreshData === 'function') {
